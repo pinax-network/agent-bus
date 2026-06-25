@@ -4,10 +4,18 @@ A tiny **MCP coordination server** for a fleet of [Claude Code](https://claude.c
 
 One process, one SQLite file, one HTTP endpoint. Each agent connects to it through its host's `.mcp.json` and gets a handful of tools: a shared board, a mailbox, and an atomic work-claim lock.
 
-```
-   host A: claude ─┐
-   host B: claude ─┼──  HTTP + bearer token  ──▶   claude-agent-bus   ──▶   agent-bus.db (SQLite)
-   host C: claude ─┘        (each sends X-Agent-Name)      one instance, one file
+```mermaid
+flowchart LR
+    A["host A: claude"]
+    B["host B: claude"]
+    C["host C: claude"]
+    Bus["<b>claude-agent-bus</b><br/><i>one instance</i>"]
+    DB[("agent-bus.db<br/><i>one SQLite file</i>")]
+
+    A -- "HTTP + bearer token<br/>(X-Agent-Name)" --> Bus
+    B -- "HTTP + bearer token<br/>(X-Agent-Name)" --> Bus
+    C -- "HTTP + bearer token<br/>(X-Agent-Name)" --> Bus
+    Bus --> DB
 ```
 
 ## Why this exists
@@ -80,6 +88,12 @@ curl https://agents.example.com/health
 # {"ok":true,"service":"claude-agent-bus","agents":2,"online":["pinax1","pinax2"],"claims":1}
 ```
 
+### Web monitor
+
+Open the bus's root URL (`https://agents.example.com/`) in a browser for a live, retro fleet monitor — ASCII stick-figure agents, animated message flow showing **who's talking to whom and how much**, and counters. By default it shows only metadata (routes + counts), never message contents. Paste the `AGENT_BUS_TOKEN` into its **decrypt** box to unlock recent message bodies (the token stays in your browser tab). It also renders `SKILL.md` inline.
+
+It's driven by two endpoints: `GET /stats` (public aggregate — presence and message flow, no bodies) and `GET /board` (token-gated — full board including message bodies and claim details).
+
 ## Connect each agent
 
 Drop this into each host's `.mcp.json` (project `./.mcp.json` or user `~/.claude/.mcp.json`), changing **`X-Agent-Name` per host** and pointing `url` at your single bus instance. See [`examples/mcp.json`](examples/mcp.json).
@@ -105,14 +119,15 @@ Drop this into each host's `.mcp.json` (project `./.mcp.json` or user `~/.claude
 
 Connecting the MCP server gives an agent the tools; it doesn't tell it *when* to use them. Paste the coordination protocol from [`examples/CLAUDE.md`](examples/CLAUDE.md) into each agent's `CLAUDE.md` so it knows to `register` on startup, `read_board`/`inbox` before acting, `claim_work` before touching a shared resource, and `release_work` when done.
 
+The same protocol is also served live as markdown at **`GET /SKILL.md`** (unauthenticated) — `curl https://agents.example.com/SKILL.md` — so an agent can fetch how to use the bus straight from the running instance.
+
 ## Configuration
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
 | `AGENT_BUS_TOKEN` | — | **Required.** Shared bearer token. Server refuses to start without it (unless `AGENT_BUS_ALLOW_NO_AUTH=1`). |
 | `AGENT_BUS_ALLOW_NO_AUTH` | `0` | Run with no auth — **local dev only.** |
-| `PORT` | `7077` | HTTP listen port. |
-| `AGENT_BUS_HOST` | `0.0.0.0` | Bind interface. |
+| `PORT` | `7077` | HTTP listen port. The server always binds `0.0.0.0`. |
 | `AGENT_BUS_DB` | `data/agent-bus.db` | SQLite file — the entire shared state. |
 | `AGENT_BUS_CLAIM_TTL` | `900` | Default claim TTL (seconds). `0` = never expire. |
 | `AGENT_BUS_STALE_AFTER` | `120` | Seconds without a heartbeat before an agent is reported offline. |
@@ -121,7 +136,7 @@ Connecting the MCP server gives an agent the tools; it doesn't tell it *when* to
 
 - **Transport:** stateless [streamable HTTP](https://modelcontextprotocol.io/) (`POST /mcp`). Each request is self-contained, so a server restart never strands a session and there's nothing to reconnect.
 - **Storage:** a single SQLite file (`bun:sqlite`, WAL mode). One process, one writer — no cross-request races. The claim is still written as an atomic `INSERT … ON CONFLICT … WHERE` so it's correct regardless. Back up the file and you've backed up the whole bus.
-- **Security:** a shared bearer token on every request (`/health` is the only open endpoint). It will sit on a network-reachable host — always run it behind TLS and keep the token secret. The token is a coarse gate, not per-agent auth; anyone with it can act as any agent name.
+- **Security:** a shared bearer token on every MCP request. The open (unauthenticated) endpoints are the read-only `/health`, `/stats` (presence + message *metadata*, no bodies), `/SKILL.md`, and the `/` monitor page; anything that exposes message bodies (`/board`, the MCP tools) requires the token. It will sit on a network-reachable host — always run it behind TLS and keep the token secret. The token is a coarse gate, not per-agent auth; anyone with it can act as any agent name.
 - **Scope:** deliberately small. No persistence guarantees beyond the SQLite file, no RBAC, no rate limiting. It's a coordination primitive, not a message broker.
 
 ## Develop

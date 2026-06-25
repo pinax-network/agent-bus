@@ -8,6 +8,8 @@ RUN bun install --frozen-lockfile --production
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY skills ./skills
+COPY web ./web
 
 # SQLite lives here. On Railway, attach a Volume mounted at /data to persist the
 # bus across redeploys (otherwise state resets each deploy — agents just

@@ -6,9 +6,24 @@
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { readFileSync } from "node:fs";
 import { loadConfig } from "./config.ts";
 import { BusStore } from "./db.ts";
 import { buildMcpServer } from "./server.ts";
+
+// Static assets read once at startup; null if absent.
+function readAsset(relPath: string): string | null {
+  try {
+    return readFileSync(new URL(relPath, import.meta.url), "utf8");
+  } catch {
+    return null;
+  }
+}
+// Usage doc, served verbatim at GET /SKILL.md so an agent (or human) can fetch
+// how to use the bus as markdown.
+const skillMd: string | null = readAsset("../skills/SKILL.md");
+// The landing page — a live, retro visualization of the fleet.
+const landingHtml: string | null = readAsset("../web/index.html");
 
 const cfg = loadConfig();
 const store = new BusStore(cfg.dbPath, cfg.staleAfter);
@@ -40,6 +55,52 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// --- SKILL.md: unauthenticated. How to use the bus, as markdown — so an agent
+// can self-onboard by fetching it. No secrets here, just the protocol.
+app.get("/SKILL.md", (_req, res) => {
+  if (skillMd === null) {
+    res.status(404).type("text/plain").send("SKILL.md not found");
+    return;
+  }
+  res.type("text/markdown").send(skillMd);
+});
+
+// --- landing page: unauthenticated. A live, retro visualization of the fleet.
+app.get("/", (_req, res) => {
+  if (landingHtml === null) {
+    res.status(404).type("text/plain").send("landing page not found");
+    return;
+  }
+  res.type("text/html").send(landingHtml);
+});
+
+// --- stats: unauthenticated aggregate for the landing page. Presence + message
+// FLOW (who→whom, how much, when) but NO message bodies. Answers "which agents
+// are talking" without revealing what was said.
+app.get("/stats", (_req, res) => {
+  const agents = store.listAgents();
+  res.json({
+    ok: true,
+    now: Date.now(),
+    staleAfter: cfg.staleAfter,
+    agents: agents.map((a) => ({ name: a.name, online: a.online, status: a.status, host: a.host, lastSeen: a.last_seen })),
+    messages: store.messageStats(),
+    claims: store.listClaims().length,
+  });
+});
+
+// --- board: token-gated. The full picture including message BODIES and claim
+// details — this is what the AGENT_BUS_TOKEN "unlocks" in the UI.
+app.get("/board", auth, (_req, res) => {
+  res.json({
+    ok: true,
+    now: Date.now(),
+    agents: store.listAgents(),
+    claims: store.listClaims(),
+    messages: store.recentMessages(50),
+  });
+});
+
 // --- MCP endpoint: stateless streamable HTTP. A fresh server + transport per
 // request (no session state to lose across restarts); identity comes from the
 // X-Agent-Name header and is closed over by the tools.
@@ -67,9 +128,11 @@ const noStream = (_req: Request, res: Response) =>
 app.get("/mcp", auth, noStream);
 app.delete("/mcp", auth, noStream);
 
-const httpServer = app.listen(cfg.port, cfg.host, () => {
+// Always bind all interfaces — every place this runs (Railway, Docker, k8s)
+// needs the platform router to reach the container.
+const httpServer = app.listen(cfg.port, "0.0.0.0", () => {
   const authNote = cfg.allowNoAuth ? "\x1b[33mNO AUTH (dev)\x1b[0m" : "bearer-token auth";
-  console.log(`claude-agent-bus listening on http://${cfg.host}:${cfg.port}  ·  MCP at POST /mcp  ·  ${authNote}  ·  db ${cfg.dbPath}`);
+  console.log(`claude-agent-bus listening on http://0.0.0.0:${cfg.port}  ·  MCP at POST /mcp  ·  ${authNote}  ·  db ${cfg.dbPath}`);
 });
 
 function shutdown() {
