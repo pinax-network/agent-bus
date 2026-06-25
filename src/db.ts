@@ -184,6 +184,23 @@ export class BusStore {
     return rows.map((r) => this.toMessage(r));
   }
 
+  /**
+   * Aggregate message flow for the public landing page: a total count and one
+   * edge per (sender → recipient) pair with a count and the last timestamp.
+   * Deliberately returns NO message bodies — it answers "who is talking to
+   * whom, how much" without revealing what was said.
+   */
+  messageStats(): { total: number; edges: { sender: string; recipient: string; count: number; lastTs: number }[] } {
+    const total = Number((this.db.query(`SELECT COUNT(*) AS c FROM messages`).get() as { c: number }).c);
+    const edges = this.db
+      .query(
+        `SELECT sender, recipient, COUNT(*) AS count, MAX(ts) AS lastTs
+         FROM messages GROUP BY sender, recipient ORDER BY lastTs DESC`,
+      )
+      .all() as { sender: string; recipient: string; count: number; lastTs: number }[];
+    return { total, edges: edges.map((e) => ({ ...e, count: Number(e.count), lastTs: Number(e.lastTs) })) };
+  }
+
   /** Most recent messages across all recipients — for the board view. */
   recentMessages(limit = 25): MessageRow[] {
     const rows = this.db.query(`SELECT * FROM messages ORDER BY id DESC LIMIT $limit`).all({ $limit: limit }) as Record<

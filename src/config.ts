@@ -3,8 +3,6 @@
 export interface Config {
   /** TCP port the HTTP server listens on. */
   port: number;
-  /** Host/interface to bind. Default 0.0.0.0 so the fleet can reach it. */
-  host: string;
   /** SQLite file path. The whole bus is one file — back it up and you have everything. */
   dbPath: string;
   /**
@@ -40,7 +38,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   return {
     port: num(env.PORT ?? env.AGENT_BUS_PORT, 7077),
-    host: env.AGENT_BUS_HOST ?? "0.0.0.0",
     dbPath: env.AGENT_BUS_DB ?? "data/agent-bus.db",
     token,
     allowNoAuth,
