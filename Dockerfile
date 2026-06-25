@@ -9,15 +9,12 @@ RUN bun install --frozen-lockfile --production
 COPY tsconfig.json ./
 COPY src ./src
 
-# The SQLite file lives here — mount a volume to persist it across restarts.
+# SQLite lives here. On Railway, attach a Volume mounted at /data to persist the
+# bus across redeploys (otherwise state resets each deploy — agents just
+# re-register, so it's not fatal, but claims/messages are lost).
 ENV AGENT_BUS_DB=/data/agent-bus.db
-VOLUME ["/data"]
 
+# Railway injects PORT at runtime; the server reads it. 7077 is the local default.
 EXPOSE 7077
-
-# AGENT_BUS_TOKEN must be supplied at runtime (the server refuses to start without
-# it unless AGENT_BUS_ALLOW_NO_AUTH=1). HEALTHCHECK hits the unauthenticated /health.
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||7077)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["bun", "run", "src/index.ts"]

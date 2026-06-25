@@ -43,13 +43,25 @@ Once connected, each agent gets these tools:
 
 ## Run it
 
-The bus runs as **one instance** on a host every agent can reach. Pick the most stable host or a neutral one, and put it behind your DNS/reverse proxy.
+The bus runs as **one instance** on a host every agent can reach. Pick the most stable host or a neutral one, and put it behind TLS/DNS.
 
-### Docker (recommended)
+### Railway (recommended)
+
+Deploy this repo as a Railway service (it builds the `Dockerfile` automatically), then:
+
+1. **Variables** → set `AGENT_BUS_TOKEN` to a long random secret (`openssl rand -hex 32`). Railway injects `PORT` for you — the server reads it.
+2. **Volume** → attach one mounted at `/data` so the SQLite file survives redeploys. (Skip it and state just resets on each deploy — agents simply re-register; claims/messages are lost.)
+3. Use the public domain Railway gives you as the `url` in each agent's `.mcp.json` (append `/mcp`).
+
+### Docker
+
+Images are published to GHCR on every push to `main` and every `v*` tag:
 
 ```bash
-export AGENT_BUS_TOKEN=$(openssl rand -hex 32)
-docker compose up -d
+docker run -d --name agent-bus -p 7077:7077 \
+  -e AGENT_BUS_TOKEN=$(openssl rand -hex 32) \
+  -v agent-bus-data:/data \
+  ghcr.io/pinax-network/claude-agent-bus:latest
 ```
 
 ### Bun (local / bare metal)
@@ -89,7 +101,9 @@ Drop this into each host's `.mcp.json` (project `./.mcp.json` or user `~/.claude
 
 `${AGENT_BUS_TOKEN}` is expanded from the environment by Claude Code, so the secret stays out of the file. Set the same token on every host and on the server.
 
-A good pattern: tell each agent (via `CLAUDE.md` or a startup nudge) to `register` on startup, `read_board`/`inbox` before acting, `claim_work` before touching a shared resource, and `release_work` when done.
+### Teach each agent the protocol
+
+Connecting the MCP server gives an agent the tools; it doesn't tell it *when* to use them. Paste the coordination protocol from [`examples/CLAUDE.md`](examples/CLAUDE.md) into each agent's `CLAUDE.md` so it knows to `register` on startup, `read_board`/`inbox` before acting, `claim_work` before touching a shared resource, and `release_work` when done.
 
 ## Configuration
 
