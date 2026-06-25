@@ -128,6 +128,18 @@ const noStream = (_req: Request, res: Response) =>
 app.get("/mcp", auth, noStream);
 app.delete("/mcp", auth, noStream);
 
+// --- error handler: a malformed JSON body makes express.json() throw. Without
+// this, Express's default handler dumps a stack trace to the logs on every junk
+// request (bots, probes, broken clients). Turn it into a clean 400 instead.
+app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  const e = err as { type?: string; status?: number; statusCode?: number } | null;
+  const isBadBody = e?.type === "entity.parse.failed" || err instanceof SyntaxError;
+  if (res.headersSent) return next(err);
+  const status = isBadBody ? 400 : e?.status ?? e?.statusCode ?? 500;
+  const message = isBadBody ? "Parse error: request body is not valid JSON" : "internal server error";
+  res.status(status).json({ jsonrpc: "2.0", error: { code: isBadBody ? -32700 : -32603, message }, id: null });
+});
+
 // Always bind all interfaces — every place this runs (Railway, Docker, k8s)
 // needs the platform router to reach the container.
 const httpServer = app.listen(cfg.port, "0.0.0.0", () => {
