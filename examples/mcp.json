@@ -1,0 +1,13 @@
+{
+  "//": "Drop this into each host's .mcp.json (project-level: ./.mcp.json, or user-level: ~/.claude/.mcp.json). Change X-Agent-Name per host so each agent has a stable identity on the bus (e.g. pinax1, pinax2, pinaxtest). Point url at the single host running the bus.",
+  "mcpServers": {
+    "agent-bus": {
+      "type": "http",
+      "url": "https://agents.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${AGENT_BUS_TOKEN}",
+        "X-Agent-Name": "pinax1"
+      }
+    }
+  }
+}

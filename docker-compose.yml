@@ -1,0 +1,20 @@
+# Run the bus on ONE host the whole fleet can reach. Put it behind your reverse
+# proxy / DNS (e.g. agents.example.com) and point every agent's .mcp.json at it.
+services:
+  agent-bus:
+    build: .
+    # Or use a published image once you push one:
+    # image: ghcr.io/pinax-network/claude-agent-bus:latest
+    restart: unless-stopped
+    ports:
+      - "7077:7077"
+    environment:
+      # REQUIRED — generate with: openssl rand -hex 32
+      AGENT_BUS_TOKEN: ${AGENT_BUS_TOKEN:?set AGENT_BUS_TOKEN in your environment or .env}
+      AGENT_BUS_CLAIM_TTL: "900"
+      AGENT_BUS_STALE_AFTER: "120"
+    volumes:
+      - agent-bus-data:/data
+
+volumes:
+  agent-bus-data:

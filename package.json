@@ -1,0 +1,26 @@
+{
+  "name": "claude-agent-bus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tiny MCP coordination server — a shared board, mailbox, and work-claim bus for a fleet of Claude Code agents running across separate hosts.",
+  "bin": {
+    "claude-agent-bus": "src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "express": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/express": "latest",
+    "typescript": "latest"
+  }
+}
