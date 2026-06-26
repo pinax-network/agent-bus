@@ -1,5 +1,7 @@
 // Runtime configuration, read from the environment with sensible defaults.
 
+import { parseLevel, type LogLevel } from "./log.ts";
+
 export interface Config {
   /** TCP port the HTTP server listens on. */
   port: number;
@@ -21,6 +23,12 @@ export interface Config {
   defaultClaimTtl: number;
   /** Mark an agent stale (offline) after this many seconds without a heartbeat. */
   staleAfter: number;
+  /**
+   * Minimum log level emitted to stdout/stderr. "debug" logs every agent action
+   * (registers, heartbeats, messages, inbox polls, claims). Set via
+   * AGENT_BUS_LOG_LEVEL; default "info".
+   */
+  logLevel: LogLevel;
 }
 
 function num(v: string | undefined, d: number): number {
@@ -43,5 +51,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     allowNoAuth,
     defaultClaimTtl: num(env.AGENT_BUS_CLAIM_TTL, 900), // 15 min
     staleAfter: num(env.AGENT_BUS_STALE_AFTER, 120), // 2 min
+    logLevel: parseLevel(env.AGENT_BUS_LOG_LEVEL),
   };
 }
