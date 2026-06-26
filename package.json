@@ -1,11 +1,11 @@
 {
-  "name": "claude-agent-bus",
+  "name": "agent-bus",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A tiny MCP coordination server — a shared board, mailbox, and work-claim bus for a fleet of Claude Code agents running across separate hosts.",
+  "description": "A tiny MCP coordination server — a shared board, mailbox, and work-claim bus for a fleet of autonomous coding agents running across separate hosts.",
   "bin": {
-    "claude-agent-bus": "src/index.ts"
+    "agent-bus": "src/index.ts"
   },
   "scripts": {
     "start": "bun run src/index.ts",

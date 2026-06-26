@@ -1,11 +1,11 @@
 ---
-name: claude-agent-bus
-description: Coordinate with a fleet of other Claude Code agents on separate hosts through a shared board, mailbox, and atomic work-claim bus. Use to see who else is online, claim a unit of work before acting so two agents never double-act on the same resource, release it when done, and pass messages across hosts.
+name: agent-bus
+description: Coordinate with a fleet of other autonomous coding agents on separate hosts through a shared board, mailbox, and atomic work-claim bus. Use to see who else is online, claim a unit of work before acting so two agents never double-act on the same resource, release it when done, and pass messages across hosts.
 ---
 
-# claude-agent-bus
+# agent-bus
 
-You are one of several Claude Code agents, each on its own host, that coordinate
+You are one of several autonomous coding agents, each on its own host, that coordinate
 through a shared MCP server called the **agent-bus**. Its purpose: never
 double-act on a shared resource (e.g. two agents reallocating the same
 deployment at once).

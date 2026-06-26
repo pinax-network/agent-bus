@@ -1,15 +1,15 @@
-# claude-agent-bus
+# agent-bus
 
-A tiny **MCP coordination server** for a fleet of [Claude Code](https://claude.com/claude-code) agents running on **separate hosts**. It gives independently-started agents a shared place to see each other, pass messages, and claim work so they don't step on each other.
+A tiny **MCP coordination server** for a fleet of autonomous coding agents running on **separate hosts** — [Claude Code](https://claude.com/claude-code), Hermes, OpenClaw, or any MCP-capable agent. It gives independently-started agents a shared place to see each other, pass messages, and claim work so they don't step on each other.
 
-One process, one SQLite file, one HTTP endpoint. Each agent connects to it through its host's `.mcp.json` and gets a handful of tools: a shared board, a mailbox, and an atomic work-claim lock.
+One process, one SQLite file, one HTTP endpoint. Each agent connects to it through its host's `.mcp.json` (or equivalent MCP config) and gets a handful of tools: a shared board, a mailbox, and an atomic work-claim lock.
 
 ```mermaid
 flowchart LR
-    A["host A: claude"]
-    B["host B: claude"]
-    C["host C: claude"]
-    Bus["<b>claude-agent-bus</b><br/><i>one instance</i>"]
+    A["host A: agent"]
+    B["host B: agent"]
+    C["host C: agent"]
+    Bus["<b>agent-bus</b><br/><i>one instance</i>"]
     DB[("agent-bus.db<br/><i>one SQLite file</i>")]
 
     A -- "HTTP + bearer token<br/>(X-Agent-Name)" --> Bus
@@ -20,13 +20,13 @@ flowchart LR
 
 ## Why this exists
 
-Claude Code's built-in multi-agent features don't cover this case:
+Most agent runtimes only coordinate agents that share a single session or host. Take Claude Code as an example:
 
 - **Subagents** (the `Agent`/`Task` tool) are children of one session — they report only to their parent and can't talk to each other or to other top-level sessions.
 - **Agent Teams** (experimental) coordinate multiple sessions under a single local lead — not independent CLIs started on different machines.
 - **Separate top-level CLIs on separate hosts** have **no built-in channel between them.**
 
-So when you have, say, three Graph indexers each running their own Claude Code agent on their own box, there's nothing native that lets them coordinate. This is the thin shared layer they all touch: domain-agnostic, one small service, no host is special at the app level.
+The same gap shows up with any agent runtime: once the agents live in different processes on different boxes, there's nothing native that lets them coordinate. So when you have, say, three Graph indexers each running their own agent on their own host, this is the thin shared layer they all touch: runtime-agnostic, one small service, no host is special at the app level.
 
 ## What an agent can do
 
@@ -69,7 +69,7 @@ Images are published to GHCR on every push to `main` and every `v*` tag:
 docker run -d --name agent-bus -p 7077:7077 \
   -e AGENT_BUS_TOKEN=$(openssl rand -hex 32) \
   -v agent-bus-data:/data \
-  ghcr.io/pinax-network/claude-agent-bus:latest
+  ghcr.io/pinax-network/agent-bus:latest
 ```
 
 ### Bun (local / bare metal)
@@ -85,7 +85,7 @@ Check it's up (unauthenticated):
 
 ```bash
 curl https://agents.example.com/health
-# {"ok":true,"service":"claude-agent-bus","agents":2,"online":["pinax1","pinax2"],"claims":1}
+# {"ok":true,"service":"agent-bus","agents":2,"online":["pinax1","pinax2"],"claims":1}
 ```
 
 ### Web monitor
@@ -96,7 +96,7 @@ It's driven by two endpoints: `GET /stats` (public aggregate — presence and me
 
 ## Connect each agent
 
-Drop this into each host's `.mcp.json` (project `./.mcp.json` or user `~/.claude/.mcp.json`), changing **`X-Agent-Name` per host** and pointing `url` at your single bus instance. See [`examples/mcp.json`](examples/mcp.json).
+Drop this into each host's MCP config (for Claude Code: project `./.mcp.json` or user `~/.claude/.mcp.json`), changing **`X-Agent-Name` per host** and pointing `url` at your single bus instance. See [`examples/mcp.json`](examples/mcp.json).
 
 ```json
 {
@@ -113,11 +113,11 @@ Drop this into each host's `.mcp.json` (project `./.mcp.json` or user `~/.claude
 }
 ```
 
-`${AGENT_BUS_TOKEN}` is expanded from the environment by Claude Code, so the secret stays out of the file. Set the same token on every host and on the server.
+`${AGENT_BUS_TOKEN}` is expanded from the environment by the agent runtime (e.g. Claude Code), so the secret stays out of the file. Set the same token on every host and on the server.
 
 ### Teach each agent the protocol
 
-Connecting the MCP server gives an agent the tools; it doesn't tell it *when* to use them. Paste the coordination protocol from [`examples/CLAUDE.md`](examples/CLAUDE.md) into each agent's `CLAUDE.md` so it knows to `register` on startup, `read_board`/`inbox` before acting, `claim_work` before touching a shared resource, and `release_work` when done.
+Connecting the MCP server gives an agent the tools; it doesn't tell it *when* to use them. Paste the coordination protocol from [`examples/CLAUDE.md`](examples/CLAUDE.md) into each agent's instructions file (`CLAUDE.md` for Claude Code, or the equivalent for your runtime) so it knows to `register` on startup, `read_board`/`inbox` before acting, `claim_work` before touching a shared resource, and `release_work` when done.
 
 The same protocol is also served live as markdown at **`GET /SKILL.md`** (unauthenticated) — `curl https://agents.example.com/SKILL.md` — so an agent can fetch how to use the bus straight from the running instance.
 
