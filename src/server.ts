@@ -8,6 +8,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { BusStore } from "./db.ts";
 import type { Config } from "./config.ts";
+import { log } from "./log.ts";
 
 const VERSION = "0.1.0";
 
@@ -45,6 +46,8 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
       const name = who(agent);
       if (!name) return err("no agent name (pass `agent` or set the X-Agent-Name header)");
       store.register(name, host, capabilities ?? [], status);
+      const online = store.listAgents().filter((a) => a.online).length;
+      log.info("register", { agent: name, host, caps: (capabilities ?? []).length, status, online });
       return json(board(store, cfg));
     },
   );
@@ -69,6 +72,9 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
       if (!row) {
         // First heartbeat before register: register implicitly so we never drop a ping.
         store.register(name, undefined, [], status, data);
+        log.info("heartbeat (implicit register)", { agent: name, status });
+      } else {
+        log.debug("heartbeat", { agent: name, status });
       }
       return json(board(store, cfg));
     },
@@ -101,6 +107,7 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
       const name = who(agent);
       if (!name) return err("no agent name (pass `agent` or set the X-Agent-Name header)");
       if (!store.heartbeat(name, status, data)) store.register(name, undefined, [], status, data);
+      log.info("status", { agent: name, status });
       return json({ ok: true, agent: name, status });
     },
   );
@@ -123,7 +130,15 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
     async ({ from, to, body, data }) => {
       const sender = who(from);
       if (!sender) return err("no sender name (pass `from` or set the X-Agent-Name header)");
-      const msg = store.send(sender, to?.trim() || "*", body, data);
+      const recipient = to?.trim() || "*";
+      const msg = store.send(sender, recipient, body, data);
+      log.info(recipient === "*" ? "broadcast" : "message", {
+        id: msg.id,
+        from: sender,
+        to: recipient,
+        bytes: body.length,
+        data: data !== undefined,
+      });
       return json({ ok: true, message: msg });
     },
   );
@@ -146,6 +161,9 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
       if (!name) return err("no agent name (pass `agent` or set the X-Agent-Name header)");
       const messages = store.inbox(name, since ?? 0, limit ?? 100);
       const cursor = messages.length ? messages[messages.length - 1].id : (since ?? 0);
+      // Empty polls are the common case and noisy — only log deliveries at info.
+      if (messages.length) log.info("inbox delivered", { agent: name, count: messages.length, since: since ?? 0, cursor });
+      else log.debug("inbox empty", { agent: name, since: since ?? 0 });
       return json({ messages, cursor });
     },
   );
@@ -170,6 +188,8 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
       const name = who(agent);
       if (!name) return err("no agent name (pass `agent` or set the X-Agent-Name header)");
       const { claim, acquired } = store.claim(key, name, ttl ?? cfg.defaultClaimTtl, note);
+      if (acquired) log.info("claim acquired", { agent: name, key, ttl: ttl ?? cfg.defaultClaimTtl });
+      else log.info("claim contended", { agent: name, key, heldBy: claim.owner });
       return json({ acquired, claim });
     },
   );
@@ -190,6 +210,7 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
       const name = who(agent);
       if (!name) return err("no agent name (pass `agent` or set the X-Agent-Name header)");
       const released = store.release(key, name);
+      log.info(released ? "claim released" : "release ignored", { agent: name, key });
       return json({ released, key });
     },
   );

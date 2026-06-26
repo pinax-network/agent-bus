@@ -131,6 +131,7 @@ The same protocol is also served live as markdown at **`GET /SKILL.md`** (unauth
 | `AGENT_BUS_DB` | `data/agent-bus.db` | SQLite file — the entire shared state. |
 | `AGENT_BUS_CLAIM_TTL` | `900` | Default claim TTL (seconds). `0` = never expire. |
 | `AGENT_BUS_STALE_AFTER` | `120` | Seconds without a heartbeat before an agent is reported offline. |
+| `AGENT_BUS_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, or `error`. `debug` logs every MCP request/response and inbox poll; `info` logs agent actions (registers, messages, claims). |
 
 ## Design notes
 

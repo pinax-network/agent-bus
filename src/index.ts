@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { loadConfig } from "./config.ts";
 import { BusStore } from "./db.ts";
 import { buildMcpServer } from "./server.ts";
+import { log, setLevel } from "./log.ts";
 
 // Static assets read once at startup; null if absent.
 function readAsset(relPath: string): string | null {
@@ -26,6 +27,7 @@ const skillMd: string | null = readAsset("../skills/SKILL.md");
 const landingHtml: string | null = readAsset("../web/index.html");
 
 const cfg = loadConfig();
+setLevel(cfg.logLevel);
 const store = new BusStore(cfg.dbPath, cfg.staleAfter);
 
 const app = express();
@@ -106,9 +108,18 @@ app.get("/board", auth, (_req, res) => {
 // X-Agent-Name header and is closed over by the tools.
 app.post("/mcp", auth, async (req: Request, res: Response) => {
   const identity = (req.header("x-agent-name") ?? "").trim() || null;
+  // The JSON-RPC envelope tells us what the agent is actually doing: `method`
+  // is e.g. "tools/call", and for tool calls params.name is the tool invoked.
+  const rpc = (req.body ?? {}) as { method?: string; params?: { name?: string } };
+  const method = rpc.method ?? "?";
+  const tool = method === "tools/call" ? rpc.params?.name : undefined;
+  const started = Date.now();
+  log.debug("mcp request", { agent: identity, method, tool, ip: req.ip });
+
   const server = buildMcpServer(store, cfg, identity);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => {
+    log.debug("mcp response", { agent: identity, method, tool, status: res.statusCode, ms: Date.now() - started });
     transport.close();
     server.close();
   });
@@ -116,6 +127,7 @@ app.post("/mcp", auth, async (req: Request, res: Response) => {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (e) {
+    log.error("mcp error", { agent: identity, method, tool, err: e instanceof Error ? e.message : String(e) });
     if (!res.headersSent) {
       res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: String(e instanceof Error ? e.message : e) }, id: null });
     }
@@ -131,12 +143,14 @@ app.delete("/mcp", auth, noStream);
 // --- error handler: a malformed JSON body makes express.json() throw. Without
 // this, Express's default handler dumps a stack trace to the logs on every junk
 // request (bots, probes, broken clients). Turn it into a clean 400 instead.
-app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   const e = err as { type?: string; status?: number; statusCode?: number } | null;
   const isBadBody = e?.type === "entity.parse.failed" || err instanceof SyntaxError;
   if (res.headersSent) return next(err);
   const status = isBadBody ? 400 : e?.status ?? e?.statusCode ?? 500;
   const message = isBadBody ? "Parse error: request body is not valid JSON" : "internal server error";
+  if (isBadBody) log.warn("bad request body", { ip: req.ip, status });
+  else log.error("unhandled error", { ip: req.ip, status, err: err instanceof Error ? err.message : String(err) });
   res.status(status).json({ jsonrpc: "2.0", error: { code: isBadBody ? -32700 : -32603, message }, id: null });
 });
 
@@ -145,9 +159,11 @@ app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
 const httpServer = app.listen(cfg.port, "0.0.0.0", () => {
   const authNote = cfg.allowNoAuth ? "\x1b[33mNO AUTH (dev)\x1b[0m" : "bearer-token auth";
   console.log(`agent-bus listening on http://0.0.0.0:${cfg.port}  ·  MCP at POST /mcp  ·  ${authNote}  ·  db ${cfg.dbPath}`);
+  log.info("started", { port: cfg.port, auth: cfg.allowNoAuth ? "none" : "bearer", db: cfg.dbPath, logLevel: cfg.logLevel });
 });
 
 function shutdown() {
+  log.info("shutting down");
   httpServer.close(() => {
     store.close();
     process.exit(0);
