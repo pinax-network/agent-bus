@@ -7,9 +7,9 @@ the `X-Agent-Name` header — so the tools never need an explicit `agent` argume
 
 ---
 
-## Fleet coordination (claude-agent-bus)
+## Fleet coordination (agent-bus)
 
-You are one of several Claude Code agents, each on its own host, that coordinate
+You are one of several autonomous coding agents, each on its own host, that coordinate
 through the shared `agent-bus` MCP server. Its purpose: never double-act on a
 shared resource (e.g. two agents reallocating the same deployment at once). Your
 identity on the bus comes from the `X-Agent-Name` header in `.mcp.json` — you do

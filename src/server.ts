@@ -21,7 +21,7 @@ function err(message: string) {
 }
 
 export function buildMcpServer(store: BusStore, cfg: Config, identity: string | null): McpServer {
-  const server = new McpServer({ name: "claude-agent-bus", version: VERSION });
+  const server = new McpServer({ name: "agent-bus", version: VERSION });
 
   /** Resolve who is acting: explicit arg wins, else the header identity. */
   const who = (arg?: string): string | null => (arg && arg.trim()) || identity || null;

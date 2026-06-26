@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// claude-agent-bus — a tiny MCP coordination server for a fleet of Claude Code
+// agent-bus — a tiny MCP coordination server for a fleet of autonomous coding
 // agents on separate hosts. One process, one SQLite file, exposing a shared
 // board + mailbox + work-claim bus over streamable HTTP. Each agent connects via
 // its host's .mcp.json and identifies itself with the X-Agent-Name header.
@@ -48,7 +48,7 @@ app.get("/health", (_req, res) => {
   const agents = store.listAgents();
   res.json({
     ok: true,
-    service: "claude-agent-bus",
+    service: "agent-bus",
     agents: agents.length,
     online: agents.filter((a) => a.online).map((a) => a.name),
     claims: store.listClaims().length,
@@ -144,7 +144,7 @@ app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
 // needs the platform router to reach the container.
 const httpServer = app.listen(cfg.port, "0.0.0.0", () => {
   const authNote = cfg.allowNoAuth ? "\x1b[33mNO AUTH (dev)\x1b[0m" : "bearer-token auth";
-  console.log(`claude-agent-bus listening on http://0.0.0.0:${cfg.port}  ·  MCP at POST /mcp  ·  ${authNote}  ·  db ${cfg.dbPath}`);
+  console.log(`agent-bus listening on http://0.0.0.0:${cfg.port}  ·  MCP at POST /mcp  ·  ${authNote}  ·  db ${cfg.dbPath}`);
 });
 
 function shutdown() {

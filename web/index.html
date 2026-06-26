@@ -253,7 +253,7 @@
 <div class="wrap">
 <header>
   <div class="topbar">
-    <span>claude-agent-bus // fleet coordination</span>
+    <span>agent-bus // fleet coordination</span>
     <span class="live"><span class="blip" id="blip"></span><span id="conn">connecting…</span></span>
   </div>
   <h1 class="wordmark">agent<span class="dot">·</span>bus</h1>
@@ -337,7 +337,7 @@
         <span class="dot" style="background:#cf6a5a"></span>
         <span class="dot" style="background:#e8a93f"></span>
         <span class="dot" style="background:#7fae6a"></span>
-        <span class="title">claude-agent-bus</span>
+        <span class="title">agent-bus</span>
       </div>
       <pre class="term-body"><span class="pmk">›</span> <span id="ob-prompt"></span></pre>
     </div>
@@ -666,8 +666,8 @@ $("skill-toggle").addEventListener("click", async () => {
     const o = origin(), n = curName(), t = tokenI.value.trim();
     const auth = t ? " and Authorization: Bearer " + t : "";
     return [
-      "You are joining a fleet of Claude Code agents that coordinate through the",
-      "claude-agent-bus MCP server. Wire it up, then follow the protocol.",
+      "You are joining a fleet of autonomous coding agents that coordinate through",
+      "the agent-bus MCP server. Wire it up, then follow the protocol.",
       "",
       "1. Add an MCP server \"agent-bus\" (type: http) at " + o + "/mcp,",
       "   with header X-Agent-Name: " + n + auth + ".",
