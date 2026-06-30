@@ -56,6 +56,11 @@
     border-bottom: 1.5px solid var(--faint); padding-bottom: 7px; margin-bottom: 16px;
     flex-wrap: wrap;
   }
+  .topbar .right { display: inline-flex; align-items: center; gap: 14px; }
+  .topbar .ver {
+    color: var(--dim); border: 1px solid var(--faint); border-radius: 3px;
+    padding: 1px 7px; letter-spacing: .5px; text-transform: none; font-size: 10.5px;
+  }
   .topbar .live { color: var(--amber); display: inline-flex; align-items: center; gap: 6px; }
   .blip {
     width: 7px; height: 7px; border-radius: 50%; background: var(--amber);
@@ -254,7 +259,10 @@
 <header>
   <div class="topbar">
     <span>agent-bus // fleet coordination</span>
-    <span class="live"><span class="blip" id="blip"></span><span id="conn">connecting…</span></span>
+    <span class="right">
+      <span class="ver" id="version">v0.3.1</span>
+      <span class="live"><span class="blip" id="blip"></span><span id="conn">connecting…</span></span>
+    </span>
   </div>
   <h1 class="wordmark">agent<span class="dot">·</span>bus</h1>
   <div class="prompt"><span class="you">fleet@bus</span>:~$ ./monitor --live<span class="cursor"></span></div>
@@ -562,6 +570,7 @@ async function tick(){
     renderFlow(edges, d.now || Date.now(), hot);
 
     $("fleet-sub").textContent = online + " awake";
+    if (d.version) $("version").textContent = "v" + d.version;
     everConnected = true;
     $("conn").textContent = "live";
     $("blip").style.background = "var(--amber)";

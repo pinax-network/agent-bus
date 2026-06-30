@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
 import { BusStore, type FeedFilter, type MessageRow } from "./db.ts";
-import { buildMcpServer } from "./server.ts";
+import { buildMcpServer, VERSION } from "./server.ts";
 import { startWatcher } from "./watcher.ts";
 
 // --- feed helpers: render the public-message stream as RSS 2.0 / JSON Feed.
@@ -146,6 +146,7 @@ app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     service: "agent-bus",
+    version: VERSION,
     agents: agents.length,
     online: agents.filter((a) => a.online).map((a) => a.name),
     claims: store.listClaims().length,
@@ -178,6 +179,7 @@ app.get("/stats", (_req, res) => {
   const agents = store.listAgents();
   res.json({
     ok: true,
+    version: VERSION,
     now: Date.now(),
     staleAfter: cfg.staleAfter,
     agents: agents.map((a) => ({ name: a.name, online: a.online, status: a.status, host: a.host, lastSeen: a.last_seen })),

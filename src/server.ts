@@ -9,7 +9,8 @@ import { z } from "zod";
 import type { BusStore } from "./db.ts";
 import type { Config } from "./config.ts";
 
-const VERSION = "0.3.0";
+/** The bus version, surfaced over MCP and on the HTTP endpoints / UI. */
+export const VERSION = "0.3.1";
 
 /** JSON → MCP text content. Agents parse the JSON; humans can read it too. */
 function json(value: unknown) {
