@@ -8,8 +8,86 @@ import express, { type Request, type Response, type NextFunction } from "express
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { readFileSync } from "node:fs";
 import { loadConfig } from "./config.ts";
-import { BusStore } from "./db.ts";
+import { BusStore, type FeedFilter, type MessageRow } from "./db.ts";
 import { buildMcpServer } from "./server.ts";
+
+// --- feed helpers: render the public-message stream as RSS 2.0 / JSON Feed.
+
+function xmlEscape(s: string): string {
+  return s.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!);
+}
+
+/** Pull the recognised feed filters out of a query string. */
+function feedFilter(q: Record<string, unknown>): FeedFilter {
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  return { assignee: str(q.assignee), domain: str(q.domain), kind: str(q.kind) };
+}
+
+/** Best-effort link for a message: its data.url, else the feed's own home. */
+function itemLink(m: MessageRow, base: string): string {
+  const url = (m.data as { url?: unknown } | null)?.url;
+  return typeof url === "string" && url ? url : base;
+}
+
+/** Categories from a message's structured data (domain, component). */
+function itemCategories(m: MessageRow): string[] {
+  const d = m.data as { domain?: unknown; component?: unknown } | null;
+  return [d?.domain, d?.component].filter((v): v is string => typeof v === "string" && v.length > 0);
+}
+
+function renderRss(messages: MessageRow[], base: string): string {
+  const items = messages
+    .map((m) => {
+      const link = itemLink(m, base);
+      const cats = itemCategories(m).map((c) => `      <category>${xmlEscape(c)}</category>`).join("\n");
+      return [
+        "    <item>",
+        `      <title>${xmlEscape(m.body)}</title>`,
+        `      <link>${xmlEscape(link)}</link>`,
+        `      <guid isPermaLink="false">agent-bus:msg:${m.id}</guid>`,
+        `      <pubDate>${new Date(m.ts).toUTCString()}</pubDate>`,
+        `      <dc:creator>${xmlEscape(m.sender)}</dc:creator>`,
+        cats,
+        "    </item>",
+      ]
+        .filter((l) => l.length > 0)
+        .join("\n");
+    })
+    .join("\n");
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">',
+    "  <channel>",
+    "    <title>agent-bus</title>",
+    `    <link>${xmlEscape(base)}</link>`,
+    "    <description>Public broadcasts from the agent-bus fleet</description>",
+    items,
+    "  </channel>",
+    "</rss>",
+  ]
+    .filter((l) => l.length > 0)
+    .join("\n");
+}
+
+function renderJsonFeed(messages: MessageRow[], base: string, feedUrl: string) {
+  return {
+    version: "https://jsonfeed.org/version/1.1",
+    title: "agent-bus",
+    home_page_url: base,
+    feed_url: feedUrl,
+    description: "Public broadcasts from the agent-bus fleet",
+    items: messages.map((m) => ({
+      id: `agent-bus:msg:${m.id}`,
+      url: itemLink(m, base),
+      title: m.body,
+      content_text: m.body,
+      date_published: new Date(m.ts).toISOString(),
+      authors: [{ name: m.sender }],
+      tags: itemCategories(m),
+      _agent_bus: { data: m.data },
+    })),
+  };
+}
 
 // Static assets read once at startup; null if absent.
 function readAsset(relPath: string): string | null {
@@ -85,8 +163,30 @@ app.get("/stats", (_req, res) => {
     staleAfter: cfg.staleAfter,
     agents: agents.map((a) => ({ name: a.name, online: a.online, status: a.status, host: a.host, lastSeen: a.last_seen })),
     messages: store.messageStats(),
+    // Public messages CAN show their bodies here — that's what 'public' means.
+    // Private bodies are still withheld; only the flow in `messages` reveals them.
+    publicMessages: store.publicMessages({}, 25),
     claims: store.listClaims().length,
   });
+});
+
+// --- feed: unauthenticated. The public projection of the message bus — only
+// messages sent with visibility='public' (e.g. release alerts), newest first.
+// Optional ?assignee= / ?domain= / ?kind= filters match the message's `data`.
+// Two formats: /feed.xml (RSS 2.0) and /feed.json (JSON Feed).
+function feedBase(req: Request): string {
+  return `${req.protocol}://${req.get("host") ?? `localhost:${cfg.port}`}`;
+}
+
+app.get("/feed.xml", (req, res) => {
+  const messages = store.publicMessages(feedFilter(req.query as Record<string, unknown>), 50);
+  res.type("application/rss+xml").send(renderRss(messages, feedBase(req)));
+});
+
+app.get("/feed.json", (req, res) => {
+  const base = feedBase(req);
+  const messages = store.publicMessages(feedFilter(req.query as Record<string, unknown>), 50);
+  res.type("application/feed+json").json(renderJsonFeed(messages, base, `${base}/feed.json`));
 });
 
 // --- board: token-gated. The full picture including message BODIES and claim

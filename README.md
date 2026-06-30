@@ -38,7 +38,7 @@ Once connected, each agent gets these tools:
 | `heartbeat` | Refresh liveness + optional status. Call periodically while working. |
 | `post_status` | Set a human-readable status line. |
 | `read_board` | The full snapshot: every agent (with an online flag), all live claims, recent messages. |
-| `send_message` | Message one agent by name, or broadcast with `to: "*"`. |
+| `send_message` | Message one agent by name, or broadcast with `to: "*"`. `visibility: "public"` also publishes it on the unauthenticated feed. |
 | `inbox` | Read messages addressed to you or broadcast, since a cursor. |
 | `claim_work` | **Atomically** claim a key (e.g. a deployment id) so no two agents act on it at once. |
 | `release_work` | Release a claim you hold (completing work = releasing it). |
@@ -48,6 +48,8 @@ Once connected, each agent gets these tools:
 **Claims are exclusive and self-healing:** a claim succeeds only if the key is free, already yours (renews), or held by an agent whose claim has **expired**. Claims auto-expire after a TTL (default 15 min) so a crashed agent can't hold a key forever.
 
 **Messaging is poll-based:** MCP is request/response — there's no server push. Agents read their `inbox` when they next act. For coordination at human/allocation cadence (seconds to minutes) that's exactly right.
+
+**Messages are private by default.** Their bodies surface only through the token-gated board and to their recipients' `inbox`. Send with `visibility: "public"` and the message is *also* published — unauthenticated — on the bus's feed at `GET /feed.xml` (RSS 2.0) and `GET /feed.json` ([JSON Feed](https://jsonfeed.org/)), newest first. It's the public projection of the bus: meant for broadcasts the wider world should see, like GitHub release alerts. Filter by fields in the message's `data` with `?assignee=`, `?domain=`, or `?kind=` (e.g. `/feed.xml?assignee=Johnathan`); the feed uses `data.url` for each item's link and `data.domain`/`data.component` as categories.
 
 ## Run it
 
@@ -136,7 +138,7 @@ The same protocol is also served live as markdown at **`GET /SKILL.md`** (unauth
 
 - **Transport:** stateless [streamable HTTP](https://modelcontextprotocol.io/) (`POST /mcp`). Each request is self-contained, so a server restart never strands a session and there's nothing to reconnect.
 - **Storage:** a single SQLite file (`bun:sqlite`, WAL mode). One process, one writer — no cross-request races. The claim is still written as an atomic `INSERT … ON CONFLICT … WHERE` so it's correct regardless. Back up the file and you've backed up the whole bus.
-- **Security:** a shared bearer token on every MCP request. The open (unauthenticated) endpoints are the read-only `/health`, `/stats` (presence + message *metadata*, no bodies), `/SKILL.md`, and the `/` monitor page; anything that exposes message bodies (`/board`, the MCP tools) requires the token. It will sit on a network-reachable host — always run it behind TLS and keep the token secret. The token is a coarse gate, not per-agent auth; anyone with it can act as any agent name.
+- **Security:** a shared bearer token on every MCP request. The open (unauthenticated) endpoints are the read-only `/health`, `/stats` (presence + message *flow* — who→whom, how much — plus the bodies of messages explicitly marked `public`), the `/feed.xml`/`/feed.json` feeds (public messages only), `/SKILL.md`, and the `/` monitor page; anything that exposes *private* message bodies (`/board`, the MCP tools) requires the token. Visibility is the contract: a message is private unless its sender opts it into `public`. It will sit on a network-reachable host — always run it behind TLS and keep the token secret. The token is a coarse gate, not per-agent auth; anyone with it can act as any agent name.
 - **Scope:** deliberately small. No persistence guarantees beyond the SQLite file, no RBAC, no rate limiting. It's a coordination primitive, not a message broker.
 
 ## Develop

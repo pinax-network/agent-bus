@@ -19,6 +19,15 @@ export interface AgentRow {
   online: boolean;
 }
 
+/**
+ * Who may read a message's body. `private` (the default) is the original
+ * behaviour: bodies surface only through the token-gated board and inbox.
+ * `public` additionally projects the message onto the unauthenticated feed
+ * (RSS/JSON) and shows its body on the landing page — for things meant to be
+ * broadcast beyond the fleet, e.g. GitHub release alerts.
+ */
+export type Visibility = "private" | "public";
+
 export interface MessageRow {
   id: number;
   ts: number;
@@ -26,6 +35,14 @@ export interface MessageRow {
   recipient: string; // agent name, or "*" for broadcast
   body: string;
   data: unknown;
+  visibility: Visibility;
+}
+
+/** Match against a public message's structured `data` for feed filtering. */
+export interface FeedFilter {
+  assignee?: string;
+  domain?: string;
+  kind?: string;
 }
 
 export interface ClaimRow {
@@ -48,12 +65,13 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 
 CREATE TABLE IF NOT EXISTS messages (
-  id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts        INTEGER NOT NULL,
-  sender    TEXT NOT NULL,
-  recipient TEXT NOT NULL,
-  body      TEXT NOT NULL,
-  data      TEXT
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts         INTEGER NOT NULL,
+  sender     TEXT NOT NULL,
+  recipient  TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  data       TEXT,
+  visibility TEXT NOT NULL DEFAULT 'private'
 );
 CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages (recipient, id);
 
@@ -77,7 +95,22 @@ export class BusStore {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA busy_timeout = 5000;");
     this.db.exec(SCHEMA);
+    this.migrate();
     this.staleAfter = staleAfter;
+  }
+
+  /**
+   * Idempotent schema upgrades for databases created before a column existed.
+   * `CREATE TABLE IF NOT EXISTS` never alters an existing table, so new columns
+   * have to be added explicitly. Safe to run on every startup.
+   */
+  private migrate(): void {
+    const cols = (this.db.query(`PRAGMA table_info(messages)`).all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("visibility")) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'`);
+    }
+    // Index creation references the column, so it must follow the ALTER above.
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_visibility ON messages (visibility, id)`);
   }
 
   private now(): number {
@@ -154,12 +187,23 @@ export class BusStore {
 
   // ---- messages / mailbox ------------------------------------------------
 
-  /** Post a message. `recipient` is an agent name or "*" for broadcast. */
-  send(sender: string, recipient: string, body: string, data?: unknown): MessageRow {
+  /**
+   * Post a message. `recipient` is an agent name or "*" for broadcast.
+   * `visibility` defaults to "private" (board/inbox only); "public" also
+   * projects the message onto the unauthenticated feed.
+   */
+  send(sender: string, recipient: string, body: string, data?: unknown, visibility: Visibility = "private"): MessageRow {
     const now = this.now();
     const res = this.db
-      .query(`INSERT INTO messages (ts, sender, recipient, body, data) VALUES ($ts, $s, $r, $b, $d)`)
-      .run({ $ts: now, $s: sender, $r: recipient, $b: body, $d: data === undefined ? null : JSON.stringify(data) });
+      .query(`INSERT INTO messages (ts, sender, recipient, body, data, visibility) VALUES ($ts, $s, $r, $b, $d, $v)`)
+      .run({
+        $ts: now,
+        $s: sender,
+        $r: recipient,
+        $b: body,
+        $d: data === undefined ? null : JSON.stringify(data),
+        $v: visibility,
+      });
     return this.getMessage(Number(res.lastInsertRowid))!;
   }
 
@@ -210,6 +254,32 @@ export class BusStore {
     return rows.map((r) => this.toMessage(r)).reverse();
   }
 
+  /**
+   * Public messages, newest first, optionally filtered by fields inside their
+   * structured `data` (assignee / domain / kind). Backs the unauthenticated
+   * RSS/JSON feed. Only `visibility = 'public'` rows are ever returned.
+   */
+  publicMessages(filter: FeedFilter = {}, limit = 50): MessageRow[] {
+    const where = [`visibility = 'public'`];
+    const params: Record<string, string | number> = { $limit: limit };
+    if (filter.assignee) {
+      where.push(`json_extract(data, '$.assignee') = $assignee`);
+      params.$assignee = filter.assignee;
+    }
+    if (filter.domain) {
+      where.push(`json_extract(data, '$.domain') = $domain`);
+      params.$domain = filter.domain;
+    }
+    if (filter.kind) {
+      where.push(`json_extract(data, '$.kind') = $kind`);
+      params.$kind = filter.kind;
+    }
+    const rows = this.db
+      .query(`SELECT * FROM messages WHERE ${where.join(" AND ")} ORDER BY id DESC LIMIT $limit`)
+      .all(params) as Record<string, unknown>[];
+    return rows.map((r) => this.toMessage(r));
+  }
+
   private toMessage(r: Record<string, unknown>): MessageRow {
     return {
       id: Number(r.id),
@@ -218,6 +288,7 @@ export class BusStore {
       recipient: String(r.recipient),
       body: String(r.body),
       data: safeJson(r.data, null),
+      visibility: (r.visibility as Visibility) ?? "private",
     };
   }
 

@@ -1,4 +1,8 @@
 import { test, expect } from "bun:test";
+import { Database } from "bun:sqlite";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BusStore } from "../src/db.ts";
 
 function store() {
@@ -32,6 +36,68 @@ test("messages: direct delivery, broadcast fan-out, no self-echo, cursor advance
   // cursor: reading past the last id returns nothing new.
   const cursor = bInbox[bInbox.length - 1].id;
   expect(s.inbox("b", cursor)).toHaveLength(0);
+});
+
+test("messages: visibility defaults to private and does not leak into the feed", () => {
+  const s = store();
+  s.register("a");
+  s.send("a", "*", "internal coordination");
+  expect(s.recentMessages().at(-1)?.visibility).toBe("private");
+  expect(s.publicMessages()).toHaveLength(0);
+});
+
+test("messages: public messages surface on the feed; private stay off it", () => {
+  const s = store();
+  s.register("watcher");
+  s.send("watcher", "*", "private note");
+  s.send("watcher", "*", "ethereum/go-ethereum v1.14.0", { kind: "github_release", domain: "Ethereum", assignee: "Johnathan" }, "public");
+
+  const pub = s.publicMessages();
+  expect(pub.map((m) => m.body)).toEqual(["ethereum/go-ethereum v1.14.0"]);
+  expect(pub[0].visibility).toBe("public");
+});
+
+test("messages: public broadcasts still deliver to agent inboxes", () => {
+  const s = store();
+  s.register("watcher");
+  s.register("b");
+  s.send("watcher", "*", "release alert", undefined, "public");
+  // visibility is about who can READ bodies publicly; delivery is unchanged.
+  expect(s.inbox("b", 0).map((m) => m.body)).toEqual(["release alert"]);
+});
+
+test("publicMessages: filters by assignee / domain / kind inside data", () => {
+  const s = store();
+  s.register("watcher");
+  s.send("watcher", "*", "eth release", { kind: "github_release", domain: "Ethereum", assignee: "Johnathan" }, "public");
+  s.send("watcher", "*", "tooling release", { kind: "github_release", domain: "Developer Tooling", assignee: "Matthew" }, "public");
+
+  expect(s.publicMessages({ assignee: "Johnathan" }).map((m) => m.body)).toEqual(["eth release"]);
+  expect(s.publicMessages({ domain: "Developer Tooling" }).map((m) => m.body)).toEqual(["tooling release"]);
+  expect(s.publicMessages({ kind: "github_release" })).toHaveLength(2);
+  expect(s.publicMessages({ assignee: "Nobody" })).toHaveLength(0);
+});
+
+test("migration: a pre-existing messages table without `visibility` is upgraded in place", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-bus-mig-"));
+  const path = join(dir, "legacy.db");
+
+  // Simulate a DB created before the column existed, with one row already in it.
+  const legacy = new Database(path, { create: true });
+  legacy.exec(`CREATE TABLE messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, sender TEXT NOT NULL,
+    recipient TEXT NOT NULL, body TEXT NOT NULL, data TEXT
+  )`);
+  legacy.query(`INSERT INTO messages (ts, sender, recipient, body, data) VALUES (1, 'old', '*', 'pre-migration', NULL)`).run();
+  legacy.close();
+
+  // Opening through BusStore must add the column (defaulting old rows to private)
+  // and keep working for both reads and new public sends.
+  const s = new BusStore(path, 60);
+  expect(s.recentMessages().at(-1)?.visibility).toBe("private");
+  s.send("watcher", "*", "post-migration public", undefined, "public");
+  expect(s.publicMessages().map((m) => m.body)).toEqual(["post-migration public"]);
+  s.close();
 });
 
 test("claims: exclusive ownership — a second agent cannot steal a live claim", () => {

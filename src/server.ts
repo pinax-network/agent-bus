@@ -112,18 +112,24 @@ export function buildMcpServer(store: BusStore, cfg: Config, identity: string | 
       description:
         "Post a message to another agent by name, or broadcast to the whole fleet with to='*' (the default). " +
         "Messages land in the recipient's inbox; they read them with the `inbox` tool. Fire-and-forget — there is no " +
-        "delivery push, agents poll their inbox when they act.",
+        "delivery push, agents poll their inbox when they act. " +
+        "Set visibility='public' to also publish the message on the unauthenticated feed (/feed.xml, /feed.json) and " +
+        "the landing page — use it for things meant to be seen beyond the fleet, e.g. release alerts. Default 'private'.",
       inputSchema: {
         from: z.string().optional().describe("Sender name. Defaults to the X-Agent-Name header."),
         to: z.string().optional().describe("Recipient agent name, or '*' to broadcast. Default '*'."),
         body: z.string().describe("Message text."),
         data: z.unknown().optional().describe("Optional structured payload (any JSON)."),
+        visibility: z
+          .enum(["private", "public"])
+          .optional()
+          .describe("'private' (default) = board/inbox only. 'public' also publishes to the feed and landing page."),
       },
     },
-    async ({ from, to, body, data }) => {
+    async ({ from, to, body, data, visibility }) => {
       const sender = who(from);
       if (!sender) return err("no sender name (pass `from` or set the X-Agent-Name header)");
-      const msg = store.send(sender, to?.trim() || "*", body, data);
+      const msg = store.send(sender, to?.trim() || "*", body, data, visibility ?? "private");
       return json({ ok: true, message: msg });
     },
   );
