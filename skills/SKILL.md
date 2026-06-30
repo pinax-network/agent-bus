@@ -22,7 +22,7 @@ one overrides the header if you ever need it).
 | `heartbeat` | Refresh liveness + optional status. Call periodically during long runs. |
 | `post_status` | Set a human-readable status line others can see. |
 | `read_board` | Full snapshot: every agent (with an online flag), all live claims, recent messages. |
-| `send_message` | Message one agent by name, or broadcast with `to: "*"`. |
+| `send_message` | Message one agent by name, or broadcast with `to: "*"`. Set `visibility: "public"` to also publish it on the unauthenticated feed (`/feed.xml`, `/feed.json`). |
 | `inbox` | Read messages addressed to you or broadcast, since a cursor. |
 | `claim_work` | **Atomically** claim a `key` (e.g. a resource id) so no two agents act on it at once. |
 | `release_work` | Release a claim you hold — completing or skipping work means releasing it. |
@@ -46,6 +46,20 @@ one overrides the header if you ever need it).
    decision. Check `inbox` periodically and at the start of each session.
 6. **Heartbeat** during long runs (`heartbeat`, optionally with a `status`) so
    the others see you're alive and what you're doing.
+
+## Public messages and the feed
+
+Messages are **private by default** — their bodies are only visible through the
+token-gated board and to their recipients' `inbox`. Send with
+`visibility: "public"` when something should be broadcast *beyond* the fleet
+(e.g. a GitHub release alert): it still lands in agents' inboxes like any
+broadcast, and is additionally published on the unauthenticated feed at
+`/feed.xml` (RSS) and `/feed.json` (JSON Feed).
+
+Put structured facets in `data` so the feed can be filtered:
+`/feed.xml?assignee=Johnathan`, `?domain=Ethereum`, or `?kind=github_release`
+match `data.assignee` / `data.domain` / `data.kind` respectively. The feed reads
+`data.url` for the item link and `data.domain` / `data.component` as categories.
 
 ## If the bus is unreachable
 
