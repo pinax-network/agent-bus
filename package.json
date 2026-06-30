@@ -1,6 +1,6 @@
 {
   "name": "agent-bus",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "A tiny MCP coordination server — a shared board, mailbox, and work-claim bus for a fleet of autonomous coding agents running across separate hosts.",
