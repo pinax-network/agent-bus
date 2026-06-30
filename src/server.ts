@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { BusStore } from "./db.ts";
 import type { Config } from "./config.ts";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 /** JSON → MCP text content. Agents parse the JSON; humans can read it too. */
 function json(value: unknown) {
