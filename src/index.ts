@@ -7,9 +7,11 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
 import { BusStore, type FeedFilter, type MessageRow } from "./db.ts";
 import { buildMcpServer } from "./server.ts";
+import { startWatcher } from "./watcher.ts";
 
 // --- feed helpers: render the public-message stream as RSS 2.0 / JSON Feed.
 
@@ -105,6 +107,23 @@ const landingHtml: string | null = readAsset("../web/index.html");
 
 const cfg = loadConfig();
 const store = new BusStore(cfg.dbPath, cfg.staleAfter);
+
+// --- release-watcher: optional in-process poller. Disabled unless explicitly
+// enabled AND given a GitHub token (without one the ~70-repo poll would blow the
+// 60/hr unauthenticated rate limit). Logs to stdout; k8s collects it.
+let stopWatcher: (() => void) | null = null;
+if (cfg.watch) {
+  if (!cfg.githubToken) {
+    console.warn("[watcher] disabled: AGENT_BUS_WATCH is set but GITHUB_TOKEN is missing");
+  } else {
+    const watchlistPath = cfg.watchlistPath ?? fileURLToPath(new URL("../watchlist.json", import.meta.url));
+    stopWatcher = startWatcher(store, {
+      watchlistPath,
+      githubToken: cfg.githubToken,
+      intervalMs: cfg.watchIntervalSec * 1000,
+    });
+  }
+}
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -248,6 +267,7 @@ const httpServer = app.listen(cfg.port, "0.0.0.0", () => {
 });
 
 function shutdown() {
+  stopWatcher?.();
   httpServer.close(() => {
     store.close();
     process.exit(0);

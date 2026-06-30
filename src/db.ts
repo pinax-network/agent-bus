@@ -82,6 +82,15 @@ CREATE TABLE IF NOT EXISTS claims (
   claimed_at INTEGER NOT NULL,
   expires_at INTEGER
 );
+
+-- The release-watcher's memory: the latest release tag it has seen per repo, so
+-- it only broadcasts when a tag actually changes (and seeds silently on first
+-- sight rather than announcing every existing release at once).
+CREATE TABLE IF NOT EXISTS release_seen (
+  repo    TEXT PRIMARY KEY,
+  tag     TEXT NOT NULL,
+  seen_at INTEGER NOT NULL
+);
 `;
 
 export class BusStore {
@@ -346,6 +355,26 @@ export class BusStore {
       claimed_at: Number(r.claimed_at),
       expires_at: r.expires_at == null ? null : Number(r.expires_at),
     };
+  }
+
+  // ---- release-watcher state ---------------------------------------------
+
+  /** The latest release tag the watcher has recorded for `repo`, or null. */
+  getSeenRelease(repo: string): string | null {
+    const row = this.db.query(`SELECT tag FROM release_seen WHERE repo = $repo`).get({ $repo: repo }) as
+      | { tag: string }
+      | null;
+    return row ? row.tag : null;
+  }
+
+  /** Record (or update) the latest release tag seen for `repo`. */
+  setSeenRelease(repo: string, tag: string): void {
+    this.db
+      .query(
+        `INSERT INTO release_seen (repo, tag, seen_at) VALUES ($repo, $tag, $now)
+         ON CONFLICT(repo) DO UPDATE SET tag = excluded.tag, seen_at = excluded.seen_at`,
+      )
+      .run({ $repo: repo, $tag: tag, $now: this.now() });
   }
 
   close(): void {

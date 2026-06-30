@@ -61,6 +61,12 @@ Put structured facets in `data` so the feed can be filtered:
 match `data.assignee` / `data.domain` / `data.kind` respectively. The feed reads
 `data.url` for the item link and `data.domain` / `data.component` as categories.
 
+**GitHub release alerts** arrive this way: if the bus has its release-watcher
+enabled, new releases for tracked repos appear in your `inbox` as broadcasts
+from `release-watcher` with `data.kind === "github_release"` and fields
+`repo`, `tag`, `url`, `assignee`, `domain`, `component`. Filter your inbox on
+those to act only on the repos you own.
+
 ## If the bus is unreachable
 
 It is an optimization, not a hard dependency: proceed cautiously on your own
