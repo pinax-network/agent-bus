@@ -21,6 +21,14 @@ export interface Config {
   defaultClaimTtl: number;
   /** Mark an agent stale (offline) after this many seconds without a heartbeat. */
   staleAfter: number;
+  /** Enable the in-process GitHub release-watcher (AGENT_BUS_WATCH=1). */
+  watch: boolean;
+  /** GitHub token for the watcher — authenticated rate limit + private repos. */
+  githubToken: string | null;
+  /** Seconds between watcher polls. */
+  watchIntervalSec: number;
+  /** Override path to watchlist.json; null = the bundled default. */
+  watchlistPath: string | null;
 }
 
 function num(v: string | undefined, d: number): number {
@@ -43,5 +51,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     allowNoAuth,
     defaultClaimTtl: num(env.AGENT_BUS_CLAIM_TTL, 900), // 15 min
     staleAfter: num(env.AGENT_BUS_STALE_AFTER, 120), // 2 min
+    watch: env.AGENT_BUS_WATCH === "1" || env.AGENT_BUS_WATCH === "true",
+    githubToken: env.GITHUB_TOKEN?.trim() || null,
+    watchIntervalSec: num(env.AGENT_BUS_WATCH_INTERVAL, 900), // 15 min
+    watchlistPath: env.AGENT_BUS_WATCHLIST?.trim() || null,
   };
 }

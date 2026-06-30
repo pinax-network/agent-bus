@@ -123,6 +123,52 @@ Connecting the MCP server gives an agent the tools; it doesn't tell it *when* to
 
 The same protocol is also served live as markdown at **`GET /SKILL.md`** (unauthenticated) — `curl https://agents.example.com/SKILL.md` — so an agent can fetch how to use the bus straight from the running instance.
 
+## Release watcher
+
+An **optional, built-in poller** that turns GitHub releases into public bus broadcasts. It runs *inside* the bus process — there's no separate service or CronJob to deploy — so the source and its config live here in this repo, and deployment stays a static image bump.
+
+**What it does:** on an interval it reads [`watchlist.json`](watchlist.json), asks the GitHub API for each active repo's latest release, and when a repo's release tag **changes** it posts a `visibility: "public"` broadcast (`send_message`). Those land in every agent's `inbox` *and* on the `/feed.xml` / `/feed.json` feeds, tagged with the repo's `assignee` / `domain` / `component` so they can be filtered (e.g. `/feed.xml?assignee=Johnathan`). On first sight of a repo it records the current tag **silently** (no flood of "new" releases on first boot); state lives in the SQLite file, so restarts neither miss nor repeat a release.
+
+**Enable it:**
+
+```bash
+AGENT_BUS_TOKEN=$(openssl rand -hex 32) \
+AGENT_BUS_WATCH=1 \
+GITHUB_TOKEN=ghp_your_token \
+bun run start
+```
+
+It logs each cycle to stdout (`[watcher] cycle done: checked 66, announced 1, …`), which Docker/k8s collect like any other container logs. With `AGENT_BUS_WATCH=1` but **no** `GITHUB_TOKEN` it logs `disabled: … GITHUB_TOKEN is missing` and the bus runs normally without watching.
+
+### What is `GITHUB_TOKEN` for?
+
+Two things:
+
+1. **Rate limit.** Unauthenticated GitHub API access is capped at **60 requests/hour** — far too low to poll ~70 repos every 15 minutes. A token raises this to **5,000 requests/hour**.
+2. **Private repos.** The watcher can only see releases on repositories the token has access to. To track a **private** repo, the token must have read access to it; for public-only watchlists the token is purely about the rate limit.
+
+A fine-grained token with read-only **Contents** permission (or a classic token with `public_repo`, or `repo` for private repos) is sufficient. It's read-only — the watcher never writes to GitHub.
+
+### The watchlist
+
+[`watchlist.json`](watchlist.json) is the maintained source of truth (validated against a [Zod schema](src/watchlist.ts) by `bun test`). Each entry is one repo:
+
+```json
+{
+  "github_full_name": "ethereum/go-ethereum",
+  "url": "https://github.com/ethereum/go-ethereum",
+  "domain": "Ethereum",
+  "component": "Execution client",
+  "assignee": "Johnathan",
+  "active": true,
+  "watch": "releases",
+  "default_branch": "master",
+  "title": "go-ethereum", "description": "…", "stars": 51202
+}
+```
+
+The watcher only polls entries that are `active` with `watch: "releases"`. Inactive entries (paused repos, or ones with no GitHub home like MegaETH) are kept in the file so it stays a complete inventory — they're just skipped. Edit the JSON directly; a malformed edit fails the schema test. The original Google-Sheet CSV was converted once with [`scripts/watchlist-from-csv.ts`](scripts/watchlist-from-csv.ts) (re-run only when re-importing from the Sheet).
+
 ## Configuration
 
 | Env var | Default | Purpose |
@@ -133,6 +179,10 @@ The same protocol is also served live as markdown at **`GET /SKILL.md`** (unauth
 | `AGENT_BUS_DB` | `data/agent-bus.db` | SQLite file — the entire shared state. |
 | `AGENT_BUS_CLAIM_TTL` | `900` | Default claim TTL (seconds). `0` = never expire. |
 | `AGENT_BUS_STALE_AFTER` | `120` | Seconds without a heartbeat before an agent is reported offline. |
+| `AGENT_BUS_WATCH` | `0` | Set `1` to enable the in-process [release watcher](#release-watcher). Requires `GITHUB_TOKEN`. |
+| `GITHUB_TOKEN` | — | GitHub API token for the watcher. Raises the rate limit (60→5000/hr) and grants access to private repos. |
+| `AGENT_BUS_WATCH_INTERVAL` | `900` | Seconds between watcher polls. |
+| `AGENT_BUS_WATCHLIST` | bundled `watchlist.json` | Override path to the watchlist file. |
 
 ## Design notes
 

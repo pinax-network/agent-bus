@@ -10,6 +10,8 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY skills ./skills
 COPY web ./web
+# The release-watcher reads this at startup (when AGENT_BUS_WATCH=1).
+COPY watchlist.json ./watchlist.json
 
 # SQLite lives here. On Railway, attach a Volume mounted at /data to persist the
 # bus across redeploys (otherwise state resets each deploy — agents just
