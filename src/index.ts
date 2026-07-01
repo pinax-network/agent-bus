@@ -201,7 +201,9 @@ function feedBase(req: Request): string {
 
 app.get("/feed.xml", (req, res) => {
   const messages = store.publicMessages(feedFilter(req.query as Record<string, unknown>), 50);
-  res.type("application/rss+xml").send(renderRss(messages, feedBase(req)));
+  // Strict XML (not application/rss+xml) so browsers show the raw XML rather
+  // than rendering their built-in "RSS page" view. Readers parse it the same.
+  res.set("Content-Type", "application/xml; charset=utf-8").send(renderRss(messages, feedBase(req)));
 });
 
 app.get("/feed.json", (req, res) => {
