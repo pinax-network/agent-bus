@@ -10,7 +10,7 @@ import type { BusStore } from "./db.ts";
 import type { Config } from "./config.ts";
 
 /** The bus version, surfaced over MCP and on the HTTP endpoints / UI. */
-export const VERSION = "0.3.1";
+export const VERSION = "0.3.2";
 
 /** JSON → MCP text content. Agents parse the JSON; humans can read it too. */
 function json(value: unknown) {
