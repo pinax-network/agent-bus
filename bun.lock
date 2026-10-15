@@ -5,14 +5,14 @@
     "": {
       "name": "agent-bus",
       "dependencies": {
-        "@modelcontextprotocol/sdk": "latest",
-        "express": "latest",
-        "zod": "latest",
+        "@modelcontextprotocol/sdk": "1.29.0",
+        "express": "5.2.1",
+        "zod": "4.4.3",
       },
       "devDependencies": {
         "@types/bun": "^1.3.14",
-        "@types/express": "latest",
-        "typescript": "latest",
+        "@types/express": "5.0.6",
+        "typescript": "6.0.3",
       },
     },
   },
